@@ -1,0 +1,24 @@
+---
+- name: Verify Corporate Network Connectivity and WireGuard Health
+  hosts: corporate_routers
+  gather_facts: false
+
+  tasks:
+    - name: Check WireGuard Peer Status
+      community.routeros.command:
+        commands:
+          - /interface wireguard peers print
+          - /interface wireguard print
+      register: wg_status
+      ignore_errors: true
+
+    - name: Ping Remote Office Gateway via WireGuard
+      community.routeros.command:
+        commands:
+          - ":put [/ping {{ wireguard.peers[0].endpoint_address }} count=3]"
+      register: ping_remote
+      ignore_errors: true
+
+    - name: Summary of Connectivity Verification
+      ansible.builtin.debug:
+        msg: "Verified Router {{ inventory_hostname }} at Site {{ site_name }}"

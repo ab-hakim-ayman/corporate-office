@@ -1,0 +1,23 @@
+---
+# Common Corporate Network Services
+corporate_domain: "corp.netdevops.local"
+dns_servers:
+  - "1.1.1.1"
+  - "8.8.8.8"
+
+ntp_servers:
+  - "time.google.com"
+  - "time.cloudflare.com"
+
+timezone: "Asia/Dhaka"
+
+# Global Ping Targets for Recursive Failover
+failover_ping_targets:
+  primary: "8.8.8.8"
+  secondary: "1.1.1.1"
+
+# Observability & Monitoring Settings
+monitoring_user: "prometheus"
+monitoring_password: "PromMonSecure2026!"
+snmp_community: "corp-monitor"
+snmp_contact: "noc@corp.netdevops.local"

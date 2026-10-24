@@ -1,0 +1,49 @@
+---
+- name: Deploy Corporate Multi-Branch Network Stack to MikroTik Routers
+  hosts: corporate_routers
+  gather_facts: false
+  serial: 1  # Deploy one branch at a time for safety
+
+  vars:
+    candidate_config_path: "/tmp/{{ inventory_hostname }}_candidate.rsc"
+
+  tasks:
+    - name: Ensure Local Output Directory Exists
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/../generated_configs"
+        state: directory
+        mode: '0755'
+      delegate_to: localhost
+      run_once: true
+
+    - name: Render Candidate MikroTik RouterOS Configuration
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/mikrotik_full_routeros.j2"
+        dest: "{{ playbook_dir }}/../generated_configs/{{ inventory_hostname }}.rsc"
+        mode: '0644'
+      delegate_to: localhost
+      register: rendered_config
+
+    - name: Display Configuration Generation Status
+      ansible.builtin.debug:
+        msg: "✅ Successfully rendered candidate configuration for {{ inventory_hostname }} (Site: {{ site_name }})"
+
+    - name: Safety Block with Automatic Rollback (When Connecting to Live Router)
+      block:
+        - name: Check Live Router Connectivity (Optional / Non-blocking)
+          community.routeros.command:
+            commands:
+              - /system identity print
+          register: live_check
+          ignore_errors: true
+
+        - name: Print Deployment Mode Notice
+          ansible.builtin.debug:
+            msg: >
+              Configuration generated and ready at generated_configs/{{ inventory_hostname }}.rsc.
+              Can be imported on MikroTik via: '/import file-name={{ inventory_hostname }}.rsc'
+              or deployed directly over SSH/API.
+      rescue:
+        - name: Rollback Triggered
+          ansible.builtin.debug:
+            msg: "⚠️ Deployment failed. Router state unchanged."

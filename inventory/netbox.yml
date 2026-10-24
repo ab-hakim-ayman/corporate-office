@@ -1,0 +1,30 @@
+# NetBox Dynamic Inventory Configuration for Corporate Network Automation
+# Pulls HQ and Branch 2 routers, 9 VLANs, Dual ISP WANs, and WireGuard VPN from NetBox
+---
+plugin: netbox.netbox.nb_inventory
+api_endpoint: http://localhost:8000
+token: 0123456789abcdef0123456789abcdef01234567
+validate_certs: false
+config_context: true
+
+device_query_filters:
+  - role: gateway-router
+
+group_by:
+  - sites
+
+compose:
+  ansible_network_os: "'community.routeros.routeros'"
+  hostname: name | string
+  site_name: site.name | string
+  site_prefix: config_context.site_prefix
+  wan_interfaces: config_context.wan_interfaces
+  lan_bridge: config_context.lan_bridge
+  trunk_interfaces: config_context.trunk_interfaces
+  vlans: config_context.vlans
+  wireguard: config_context.wireguard
+
+groups:
+  corporate_routers: "true"
+  hq: "'hq' in (name | string)"
+  branch2: "'br2' in (name | string)"

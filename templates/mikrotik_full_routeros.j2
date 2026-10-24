@@ -1,0 +1,171 @@
+# ==============================================================================
+# MikroTik RouterOS v7 Production Configuration Script
+# Generated automatically via NetDevOps Jinja2 Automation Engine
+# Hostname: {{ hostname }} | Site: {{ site_name }} | Subnet: {{ site_prefix }}
+# ==============================================================================
+
+/system identity set name="{{ hostname }}"
+/system clock set time-zone-name="{{ timezone }}"
+
+# ------------------------------------------------------------------------------
+# 1. Interface Lists
+# ------------------------------------------------------------------------------
+/interface list add name=WAN
+/interface list add name=LAN
+/interface list add name=ISOLATED_GUEST
+
+{% for wan in wan_interfaces %}
+/interface list member add interface={{ wan.name }} list=WAN
+{% endfor %}
+/interface list member add interface={{ lan_bridge }} list=LAN
+
+# ------------------------------------------------------------------------------
+# 2. LAN Bridge & VLAN Setup (vlan-filtering enabled)
+# ------------------------------------------------------------------------------
+/interface bridge add name={{ lan_bridge }} vlan-filtering=yes protocol-mode=rstp
+
+{% for trunk in trunk_interfaces %}
+/interface bridge port add bridge={{ lan_bridge }} interface={{ trunk }}
+{% endfor %}
+
+# ------------------------------------------------------------------------------
+# 3. VLAN Interfaces, IP Addressing, Pools & DHCP Servers
+# ------------------------------------------------------------------------------
+{% for vlan in vlans %}
+# --- VLAN {{ vlan.id }}: {{ vlan.name }} ({{ vlan.description }}) ---
+/interface vlan add interface={{ lan_bridge }} name="vlan{{ vlan.id }}-{{ vlan.name }}" vlan-id={{ vlan.id }}
+/interface list member add interface="vlan{{ vlan.id }}-{{ vlan.name }}" list=LAN
+
+/ip address add address={{ vlan.gateway }} interface="vlan{{ vlan.id }}-{{ vlan.name }}" comment="{{ vlan.name }}"
+/ip pool add name="pool-vlan{{ vlan.id }}-{{ vlan.name }}" ranges={{ vlan.dhcp_range }}
+/ip dhcp-server add address-pool="pool-vlan{{ vlan.id }}-{{ vlan.name }}" interface="vlan{{ vlan.id }}-{{ vlan.name }}" name="dhcp-vlan{{ vlan.id }}" lease-time=8h disabled=no
+/ip dhcp-server network add address={{ vlan.network }} gateway={{ vlan.gateway_ip }} dns-server={{ dns_servers | join(',') }} domain="{{ corporate_domain }}" comment="{{ vlan.name }} Network"
+
+{% if vlan.guest_only | default(false) %}
+/interface list member add interface="vlan{{ vlan.id }}-{{ vlan.name }}" list=ISOLATED_GUEST
+{% endif %}
+{% endfor %}
+
+# Bridge VLAN Trunk / Tagging Table
+{% for vlan in vlans %}
+/interface bridge vlan add bridge={{ lan_bridge }} tagged={{ (trunk_interfaces + [lan_bridge]) | join(',') }} vlan-ids={{ vlan.id }} comment="{{ vlan.name }}"
+{% endfor %}
+
+# ------------------------------------------------------------------------------
+# 4. Dual ISP WAN Addressing & NAT
+# ------------------------------------------------------------------------------
+{% for wan in wan_interfaces %}
+/ip address add address={{ wan.ip }} interface={{ wan.name }} comment="{{ wan.description }} ({{ wan.role }})"
+{% endfor %}
+
+/ip firewall nat add action=masquerade chain=srcnat out-interface-list=WAN comment="NAT Outbound to Internet"
+
+# ------------------------------------------------------------------------------
+# 5. Routing Tables & Dual ISP Inbound Symmetry (Mangle)
+# ------------------------------------------------------------------------------
+# Dedicated FIB Routing Tables for Return Traffic Symmetry
+{% for wan in wan_interfaces %}
+/routing table add name=to_{{ wan.name }} fib comment="Routing table for {{ wan.description }}"
+/ip route add dst-address=0.0.0.0/0 gateway={{ wan.gateway }} routing-table=to_{{ wan.name }} comment="Default return route via {{ wan.name }}"
+{% endfor %}
+
+# Inbound Connection & Routing Marks
+/ip firewall mangle
+{% for wan in wan_interfaces %}
+# Mark connections initiating from {{ wan.name }} to router services
+add action=mark-connection chain=input in-interface={{ wan.name }} connection-state=new new-connection-mark={{ wan.name }}_conn passthrough=yes comment="Mark inbound connections on {{ wan.name }}"
+add action=mark-routing chain=output connection-mark={{ wan.name }}_conn new-routing-mark=to_{{ wan.name }} passthrough=no comment="Route replies back via {{ wan.name }}"
+
+# Mark forwarded connections (e.g. DST-NAT / Port Forwarding)
+add action=mark-connection chain=forward in-interface={{ wan.name }} connection-state=new new-connection-mark={{ wan.name }}_fwd passthrough=yes comment="Mark forwarded traffic on {{ wan.name }}"
+add action=mark-routing chain=prerouting in-interface-list=LAN connection-mark={{ wan.name }}_fwd new-routing-mark=to_{{ wan.name }} passthrough=no comment="Return forwarded traffic via {{ wan.name }}"
+{% endfor %}
+
+# ------------------------------------------------------------------------------
+# 6. Dual ISP Recursive Failover Routing (Main Table)
+# ------------------------------------------------------------------------------
+# Primary Target Ping Anchor
+/ip route add dst-address={{ failover_ping_targets.primary }}/32 gateway={{ (wan_interfaces | selectattr('role', 'equalto', 'primary') | first).gateway }} scope=10 comment="Primary Ping Anchor"
+/ip route add dst-address=0.0.0.0/0 gateway={{ failover_ping_targets.primary }} check-gateway=ping distance=1 comment="Default Route via Primary ISP (Monitored)"
+
+# Secondary Target Ping Anchor
+/ip route add dst-address={{ failover_ping_targets.secondary }}/32 gateway={{ (wan_interfaces | selectattr('role', 'equalto', 'backup') | first).gateway }} scope=10 comment="Backup Ping Anchor"
+/ip route add dst-address=0.0.0.0/0 gateway={{ failover_ping_targets.secondary }} check-gateway=ping distance=2 comment="Default Route via Backup ISP (Failover)"
+
+# ------------------------------------------------------------------------------
+# 7. Site-to-Site WireGuard VPN
+# ------------------------------------------------------------------------------
+/interface wireguard add listen-port={{ wireguard.listen_port }} name={{ wireguard.interface }} private-key="{{ wireguard.private_key }}" comment="Site-to-Site VPN"
+/ip address add address={{ wireguard.tunnel_ip }} interface={{ wireguard.interface }} comment="WireGuard Tunnel IP"
+
+{% for peer in wireguard.peers %}
+/interface wireguard peers add allowed-address="{{ peer.allowed_ips }}" {% if peer.endpoint_address is defined %}endpoint-address="{{ peer.endpoint_address }}" endpoint-port={{ peer.endpoint_port }}{% endif %} interface={{ wireguard.interface }} public-key="{{ peer.public_key }}" persistent-keepalive={{ peer.persistent_keepalive | default(25) }}s comment="{{ peer.name }}"
+/ip route add dst-address={{ peer.remote_subnet }} gateway={{ wireguard.interface }} comment="Route to {{ peer.name }}"
+{% endfor %}
+
+# ------------------------------------------------------------------------------
+# 8. Enterprise Security & Isolation Firewall Filters
+# ------------------------------------------------------------------------------
+/ip firewall filter
+# FastTrack & State Tracking
+add action=accept chain=input connection-state=established,related comment="Accept Established/Related Input"
+add action=drop chain=input connection-state=invalid comment="Drop Invalid Input"
+add action=accept chain=input protocol=icmp comment="Allow ICMP (Ping)"
+
+# Allow WireGuard VPN Handshakes on WAN
+add action=accept chain=input dst-port={{ wireguard.listen_port }} protocol=udp in-interface-list=WAN comment="Allow WireGuard Tunnel Inbound"
+
+# Management Protection: Only VLAN 10 (Management) can access Winbox/SSH on router
+add action=accept chain=input in-interface="vlan10-Management" comment="Allow Full Admin Access from Management VLAN"
+
+# Observability: Allow SNMP Polling and RouterOS API for Prometheus Scraper
+add action=accept chain=input dst-port=161 protocol=udp in-interface-list=LAN comment="Allow SNMP Polling from LAN"
+add action=accept chain=input dst-port=8728,8729 protocol=tcp in-interface-list=LAN comment="Allow RouterOS API from LAN"
+add action=accept chain=input dst-port=161 protocol=udp in-interface={{ wireguard.interface }} comment="Allow SNMP Polling over WireGuard"
+add action=accept chain=input dst-port=8728,8729 protocol=tcp in-interface={{ wireguard.interface }} comment="Allow RouterOS API over WireGuard"
+
+add action=drop chain=input dst-port=22,80,443,8291,8728,8729 protocol=tcp comment="Block Router Services from Other VLANs"
+
+
+# Forwarding Rules: Established / Related / FastTrack
+add action=fasttrack-connection chain=forward connection-state=established,related hw-offload=yes comment="FastTrack"
+add action=accept chain=forward connection-state=established,related comment="Accept Established/Related Forward"
+add action=drop chain=forward connection-state=invalid comment="Drop Invalid Forward"
+
+# CCTV Security: Completely block CCTV VLAN from Internet access
+add action=drop chain=forward in-interface="vlan80-CCTV" out-interface-list=WAN comment="DROP CCTV Outbound to Internet (Anti-Leak)"
+
+# Guest Hotspot Isolation: Block Guests from ALL internal office subnets
+add action=drop chain=forward in-interface-list=ISOLATED_GUEST out-interface-list=!WAN comment="DROP Guest Access to Corporate LAN"
+
+# HR & Accounts Protection: General Staff cannot initiate connections to HR
+add action=drop chain=forward in-interface="vlan50-Staff" out-interface="vlan30-HR-Accounts" comment="BLOCK Staff to HR/Accounts"
+
+# Allow Inter-VLAN routing for trusted internal services
+add action=accept chain=forward in-interface-list=LAN out-interface-list=LAN comment="Allow Internal Corporate Routing"
+add action=accept chain=forward in-interface-list=LAN out-interface-list=WAN comment="Allow Corporate Internet"
+add action=accept chain=forward in-interface={{ wireguard.interface }} out-interface-list=LAN comment="Allow Inter-Branch VPN Traffic"
+
+# ------------------------------------------------------------------------------
+# 9. QoS Priority Queue for VoIP Telephony
+# ------------------------------------------------------------------------------
+/queue simple add name="VoIP-Priority-Queue" target="vlan60-VoIP" priority=1/1 max-limit=10M/10M comment="VoIP High Priority QoS"
+
+# ------------------------------------------------------------------------------
+# 10. Observability, SNMP & Prometheus Monitoring
+# ------------------------------------------------------------------------------
+# Enable SNMP v2c / v3 for Prometheus Monitoring
+/snmp set enabled=yes contact="{{ snmp_contact | default('noc@corp.netdevops.local') }}" location="{{ site_name }}"
+/snmp community add name={{ snmp_community | default('corp-monitor') }} addresses=0.0.0.0/0 read-access=yes security=none
+
+# Dedicated Read-Only API User for Prometheus MikroTik Exporter
+/user group add name=monitoring policy=read,api,test comment="Read-only monitoring policy"
+/user add name={{ monitoring_user | default('prometheus') }} group=monitoring password="{{ monitoring_password | default('PromMonSecure2026!') }}" comment="Prometheus Exporter Scraper"
+
+# Ensure RouterOS API service is enabled
+/ip service enable api
+
+# ------------------------------------------------------------------------------
+# Configuration rendered successfully.
+# ------------------------------------------------------------------------------
+

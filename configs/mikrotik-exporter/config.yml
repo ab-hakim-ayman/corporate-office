@@ -1,0 +1,27 @@
+# MikroTik Exporter Configuration for Corporate Multi-Branch Automation
+# Connects to MikroTik RouterOS API (Port 8728) to extract metrics
+
+devices:
+  - name: hq_router
+    address: 10.10.1.1
+    port: 8728
+    user: prometheus
+    password: PromMonSecure2026!
+
+  - name: branch2_router
+    address: 10.20.1.1
+    port: 8728
+    user: prometheus
+    password: PromMonSecure2026!
+
+features:
+  bgp: false
+  dhcp: true
+  dhcp_lease: true
+  dhcp_cookies: false
+  routes: true
+  interface: true
+  resource: true
+  wireguard: true
+  firmware: true
+  conntrack: true

@@ -1,0 +1,107 @@
+---
+hostname: "br2-rtr01"
+site_name: "Branch-Chittagong"
+site_prefix: "10.20.0.0/16"
+
+wan_interfaces:
+  - name: "ether1"
+    description: "ISP1-Primary-Fiber"
+    ip: "203.0.114.2/30"
+    gateway: "203.0.114.1"
+    bandwidth: "50M"
+    role: "primary"
+  - name: "ether2"
+    description: "ISP2-Backup-Radio"
+    ip: "198.51.101.2/30"
+    gateway: "198.51.101.1"
+    bandwidth: "30M"
+    role: "backup"
+
+lan_bridge: "bridge-lan"
+trunk_interfaces:
+  - "ether3"
+  - "ether4"
+
+vlans:
+  - id: 10
+    name: "Management"
+    network: "10.20.10.0/24"
+    gateway: "10.20.10.1/24"
+    gateway_ip: "10.20.10.1"
+    dhcp_range: "10.20.10.50-10.20.10.200"
+    description: "Network Infrastructure Management"
+  - id: 20
+    name: "Top-Management"
+    network: "10.20.20.0/24"
+    gateway: "10.20.20.1/24"
+    gateway_ip: "10.20.20.1"
+    dhcp_range: "10.20.20.50-10.20.20.200"
+    description: "Branch Management & Directors"
+  - id: 30
+    name: "HR-Accounts"
+    network: "10.20.30.0/24"
+    gateway: "10.20.30.1/24"
+    gateway_ip: "10.20.30.1"
+    dhcp_range: "10.20.30.50-10.20.30.200"
+    description: "Branch HR & Accounting"
+    protect_from_staff: true
+  - id: 40
+    name: "Admin-Ops"
+    network: "10.20.40.0/24"
+    gateway: "10.20.40.1/24"
+    gateway_ip: "10.20.40.1"
+    dhcp_range: "10.20.40.50-10.20.40.200"
+    description: "Administrative Operations"
+  - id: 50
+    name: "Staff"
+    network: "10.20.50.0/24"
+    gateway: "10.20.50.1/24"
+    gateway_ip: "10.20.50.1"
+    dhcp_range: "10.20.50.50-10.20.50.250"
+    description: "General Branch Staff"
+  - id: 60
+    name: "VoIP"
+    network: "10.20.60.0/24"
+    gateway: "10.20.60.1/24"
+    gateway_ip: "10.20.60.1"
+    dhcp_range: "10.20.60.50-10.20.60.200"
+    description: "IP Telephony and Branch Intercom"
+    qos_priority: 6
+  - id: 70
+    name: "Printers"
+    network: "10.20.70.0/24"
+    gateway: "10.20.70.1/24"
+    gateway_ip: "10.20.70.1"
+    dhcp_range: "10.20.70.10-10.20.70.50"
+    description: "Branch Networked Printers"
+  - id: 80
+    name: "CCTV"
+    network: "10.20.80.0/24"
+    gateway: "10.20.80.1/24"
+    gateway_ip: "10.20.80.1"
+    dhcp_range: "10.20.80.50-10.20.80.200"
+    description: "Branch CCTV & Security"
+    block_internet: true
+  - id: 90
+    name: "Guest-Hotspot"
+    network: "10.20.90.0/24"
+    gateway: "10.20.90.1/24"
+    gateway_ip: "10.20.90.1"
+    dhcp_range: "10.20.90.10-10.20.90.250"
+    description: "Branch Visitor Guest Wi-Fi"
+    guest_only: true
+
+wireguard:
+  role: "client"
+  interface: "wg-corp"
+  listen_port: 51820
+  tunnel_ip: "10.255.255.2/30"
+  private_key: "{{ vault_branch2_wg_private_key }}"
+  peers:
+    - name: "HQ-Dhaka"
+      public_key: "HQ_WG_PUBLIC_KEY_12345="
+      allowed_ips: "10.255.255.1/32,10.10.0.0/16"
+      remote_subnet: "10.10.0.0/16"
+      endpoint_address: "203.0.113.2"
+      endpoint_port: 51820
+      persistent_keepalive: 25

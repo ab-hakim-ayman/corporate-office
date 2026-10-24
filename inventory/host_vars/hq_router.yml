@@ -1,0 +1,107 @@
+---
+hostname: "hq-rtr01"
+site_name: "HQ-Dhaka"
+site_prefix: "10.10.0.0/16"
+
+wan_interfaces:
+  - name: "ether1"
+    description: "ISP1-Primary-Fiber"
+    ip: "203.0.113.2/30"
+    gateway: "203.0.113.1"
+    bandwidth: "100M"
+    role: "primary"
+  - name: "ether2"
+    description: "ISP2-Backup-Radio"
+    ip: "198.51.100.2/30"
+    gateway: "198.51.100.1"
+    bandwidth: "50M"
+    role: "backup"
+
+lan_bridge: "bridge-lan"
+trunk_interfaces:
+  - "ether3"
+  - "ether4"
+
+vlans:
+  - id: 10
+    name: "Management"
+    network: "10.10.10.0/24"
+    gateway: "10.10.10.1/24"
+    gateway_ip: "10.10.10.1"
+    dhcp_range: "10.10.10.50-10.10.10.200"
+    description: "Network Infrastructure Management"
+  - id: 20
+    name: "Top-Management"
+    network: "10.10.20.0/24"
+    gateway: "10.10.20.1/24"
+    gateway_ip: "10.10.20.1"
+    dhcp_range: "10.10.20.50-10.10.20.200"
+    description: "Executive and Board Management"
+  - id: 30
+    name: "HR-Accounts"
+    network: "10.10.30.0/24"
+    gateway: "10.10.30.1/24"
+    gateway_ip: "10.10.30.1"
+    dhcp_range: "10.10.30.50-10.10.30.200"
+    description: "HR and Financial Accounting"
+    protect_from_staff: true
+  - id: 40
+    name: "Admin-Ops"
+    network: "10.10.40.0/24"
+    gateway: "10.10.40.1/24"
+    gateway_ip: "10.10.40.1"
+    dhcp_range: "10.10.40.50-10.10.40.200"
+    description: "Administrative Operations"
+  - id: 50
+    name: "Staff"
+    network: "10.10.50.0/24"
+    gateway: "10.10.50.1/24"
+    gateway_ip: "10.10.50.1"
+    dhcp_range: "10.10.50.50-10.10.50.250"
+    description: "General Office Staff"
+  - id: 60
+    name: "VoIP"
+    network: "10.10.60.0/24"
+    gateway: "10.10.60.1/24"
+    gateway_ip: "10.10.60.1"
+    dhcp_range: "10.10.60.50-10.10.60.200"
+    description: "IP Telephony and PBX"
+    qos_priority: 6
+  - id: 70
+    name: "Printers"
+    network: "10.10.70.0/24"
+    gateway: "10.10.70.1/24"
+    gateway_ip: "10.10.70.1"
+    dhcp_range: "10.10.70.10-10.10.70.50"
+    description: "Networked Printers & Scanners"
+  - id: 80
+    name: "CCTV"
+    network: "10.10.80.0/24"
+    gateway: "10.10.80.1/24"
+    gateway_ip: "10.10.80.1"
+    dhcp_range: "10.10.80.50-10.10.80.200"
+    description: "CCTV Surveillance & NVR"
+    block_internet: true
+  - id: 90
+    name: "Guest-Hotspot"
+    network: "10.10.90.0/24"
+    gateway: "10.10.90.1/24"
+    gateway_ip: "10.10.90.1"
+    dhcp_range: "10.10.90.10-10.10.90.250"
+    description: "Isolated Visitor Guest Wi-Fi"
+    guest_only: true
+
+wireguard:
+  role: "server"
+  interface: "wg-corp"
+  listen_port: 51820
+  tunnel_ip: "10.255.255.1/30"
+  private_key: "{{ vault_hq_wg_private_key }}"
+  peers:
+    - name: "Branch2-Chittagong"
+      public_key: "BRANCH2_WG_PUBLIC_KEY_67890="
+      allowed_ips: "10.255.255.2/32,10.20.0.0/16"
+      remote_subnet: "10.20.0.0/16"
+      endpoint_address: "203.0.114.2"
+      endpoint_port: 51820
+      persistent_keepalive: 25
