@@ -1,0 +1,11 @@
+---
+corporate_routers:
+  platform: mikrotik_routeros
+  username: admin
+  password: "{{ vault_router_password }}"
+  connection_options:
+    scrapli:
+      platform: mikrotik_routeros
+      port: 22
+      transport: system
+      auth_strict_key: false

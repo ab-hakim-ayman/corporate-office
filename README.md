@@ -150,3 +150,30 @@ docker compose -f docker-compose.monitoring.yml up -d
 * **Prometheus Targets & Metrics:** [http://localhost:9091](http://localhost:9091)
 * **MikroTik Exporter Metrics:** [http://localhost:9436/metrics](http://localhost:9436/metrics)
 
+---
+
+## 🛡️ Enterprise NetDevOps & Verification Architecture
+
+1. **Pre-Deployment Control Plane & Security Verification (Batfish)**:
+   - `scripts/verify_batfish.py` formally tests and guarantees firewall policies before pushing:
+     - **Guest Hotspot Isolation (VLAN 90)**: Guaranteed zero routing/reachability to Management (VLAN 10) or HR (VLAN 30).
+     - **HR & Financial Data Protection (VLAN 30)**: Blocks general staff inbound initiation.
+     - **CCTV Air-Gap (VLAN 80)**: Asserts zero default WAN routing to prevent video stream leaks to the public internet.
+     - **WireGuard Overlay**: Validates reciprocal routing for HQ (`10.10.0.0/16`) and Branch (`10.20.0.0/16`).
+     - **Dual-WAN Failover**: Asserts Primary & Backup WAN configuration across all routers.
+
+2. **Ultra-Fast Parallel Automation (Nornir & Scrapli)**:
+   - `scripts/nornir_corp_exec.py` executes concurrent Python-native audits across HQ and Branch routers in sub-second intervals (`nornir_config.yaml`).
+   - Eliminates Ansible process overhead when scaling to dozens of corporate branch locations.
+
+3. **Model-Driven Telemetry (gNMI & YANG Data Models)**:
+   - `scripts/model_driven_telemetry.py` collects structured streaming telemetry conforming to OpenConfig YANG schemas:
+     - OpenConfig Interfaces: Real-time byte/packet counters on dual-WAN links (`ether1`, `ether2`).
+     - OpenConfig WireGuard: Real-time tunnel session state, latest handshake timestamps, and transfer bytes.
+     - OpenConfig ACLs: Dynamic firewall drop telemetry for guest hotspot protection.
+
+4. **Automated CI/CD Pipeline**:
+   - Pull Request: runs `yamllint`, Pydantic corporate schema validation, Batfish security verification, and `.rsc` generation test.
+   - Push to `main`: live router deployment via Ansible, followed by Nornir parallel verification and model-driven telemetry collection.
+
+
